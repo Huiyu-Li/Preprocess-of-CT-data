@@ -1,9 +1,9 @@
 import os
 import time
 import shutil
+import numpy as np
 import SimpleITK as sitk
 import scipy.ndimage as ndimage
-import numpy as np
 import matplotlib.pyplot as plt
 import warnings
 warnings.simplefilter("ignore")
@@ -47,9 +47,21 @@ def saved_preprocessed(savedImg,origin,direction,xyz_thickness,saved_name):
 	newImg.SetSpacing((xyz_thickness[0], xyz_thickness[1], xyz_thickness[2]))
 	sitk.WriteImage(newImg, saved_name)
 
-def preprocess(file_path,num_file,savedct_path,savedseg_path,):
+def preprocess():
 	start_time = time.time()
-	# Clear新数据存储路径
+	##########hyperparameters1##########
+	file_path = '/media/data/LITS/Training_dataset/'
+	num_file = len(os.listdir(file_path))
+	savedct_path = '/media/data/LITS/Preprocessed16_48/ct/'
+	savedseg_path = '/media/data/LITS/Preprocessed16_48/seg/'
+	expand_slice = 10
+	blockz = 16;blockx = 48;blocky = 48
+	stridez = blockz;stridex = blockx; stridey = blocky
+	# stridez = blockz//3;stridex = blockx//3;stridey = blocky//3
+	xyz_thickness = [1.0, 1.0, 1.0]
+	saved_idx = 0
+	##########end hyperparameters1##########
+	# Clear saved dir
 	if os.path.exists(savedct_path) is True:
 		shutil.rmtree(savedct_path)
 	os.mkdir(savedct_path)
@@ -57,12 +69,7 @@ def preprocess(file_path,num_file,savedct_path,savedseg_path,):
 		shutil.rmtree(savedseg_path)
 	os.mkdir(savedseg_path)
 
-	expand_slice = 10
-	blockz = 16;blockx = 256;blocky =256
-	stridez = blockz//3;stridex = blockx//3;stridey = blocky//3
-	xyz_thickness = [1.0, 1.0, 1.0]
-	saved_idx = 0
-	for i in range(10):#num_file
+	for i in range(1):#num_file
 		ct = sitk.ReadImage(os.path.join(file_path,'volume-'+str(i)+'.nii'), sitk.sitkFloat32)# sitk.sitkInt16 Read one image using SimpleITK
 		origin = ct.GetOrigin()
 		direction = ct.GetDirection()
@@ -78,7 +85,7 @@ def preprocess(file_path,num_file,savedct_path,savedseg_path,):
 		ct_array = ndimage.zoom(ct_array, (
 		ct.GetSpacing()[-1] / xyz_thickness[-1], ct.GetSpacing()[0] / xyz_thickness[0],
 		ct.GetSpacing()[1] / xyz_thickness[1]), order=3)
-		# 对金标准插值不应该使用高级插值方式，这样会破坏边界部分，总之这次错误也说明了检查数据的重要性
+		# 对金标准插值不应该使用高级插值方式，这样会破坏边界部分,检查数据输出很重要！！！
 		seg_array = ndimage.zoom(seg_array, (
 		ct.GetSpacing()[-1] / xyz_thickness[-1], ct.GetSpacing()[0] / xyz_thickness[0],
 		ct.GetSpacing()[1] / xyz_thickness[1]), order=0)
@@ -90,10 +97,8 @@ def preprocess(file_path,num_file,savedct_path,savedseg_path,):
 		print('window transform:',ct_array.min(),ct_array.max())
 
 		# step3:get mask effective range(startpostion:endpostion)
-		# 找到包含器官的slice
 		z = np.any(seg_array, axis=(1, 2))  # seg_array.shape(125, 256, 256)
 		start_slice, end_slice = np.where(z)[0][[0, -1]]
-		# 两个方向上各扩张expand_slice
 		if start_slice - expand_slice < 0:
 			start_slice = 0
 		else:
@@ -114,15 +119,6 @@ def preprocess(file_path,num_file,savedct_path,savedseg_path,):
 		print('Time {:.3f} min'.format((time.time() - start_time) / 60))
 		print(saved_idx)
 
-def main():
-	start_time = time.time()
-	file_path = '/media/lihuiyu/data/LITS/Training_dataset/'
-	num_file = 131
-	savedct_path = '/media/lihuiyu/data/LITS/Preprocessed128_16/ct/'
-	savedseg_path = '/media/lihuiyu/data/LITS/Preprocessed128_16/seg/'
-	preprocess(file_path,num_file,savedct_path,savedseg_path)
-	print('Time {:.3f} min'.format((time.time() - start_time) / 60))
-	print(time.strftime('%Y/%m/%d-%H:%M:%S', time.localtime()))
 
 def check_empty(savedseg_path):
 	seg_lists = os.listdir(savedseg_path)
@@ -133,4 +129,7 @@ def check_empty(savedseg_path):
 			print(seg_lists[i])
 
 if __name__ == '__main__':
-	main()
+	start_time = time.time()
+	preprocess()
+	print('Time {:.3f} min'.format((time.time() - start_time) / 60))
+	print(time.strftime('%Y/%m/%d-%H:%M:%S', time.localtime()))

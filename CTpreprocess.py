@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 import SimpleITK as sitk
 import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
+from utils import *
 import warnings
 warnings.simplefilter("ignore")
 
@@ -22,10 +22,11 @@ def window_transform(ct_array, windowWidth, windowCenter, normal=False):
 	return newimg
 
 def generate_subimage(ct_array,seg_array,stridez, stridex, stridey, blockz, blockx, blocky,
-					  idx,origin,direction,xyz_thickness,savedct_path,savedseg_path):
+					  saved_idx,origin,direction,xyz_thickness,savedct_path,savedseg_path,saved_prefix):
 	num_z = (ct_array.shape[0]-blockz)//stridez + 1#math.floor()
 	num_x = (ct_array.shape[1]-blockx)//stridex + 1
 	num_y = (ct_array.shape[2]-blocky)//stridey + 1
+	idx = 0
 	for z in range(num_z):
 		for x in range(num_x):
 			for y in range(num_y):
@@ -33,12 +34,12 @@ def generate_subimage(ct_array,seg_array,stridez, stridex, stridey, blockz, bloc
 				if seg_block.any():
 					ct_block = ct_array[z * stridez:z * stridez + blockz, x * stridex:x * stridex + blockx,
 							   y * stridey:y * stridey + blocky]
-					saved_ctname = os.path.join(savedct_path, 'volume-' + str(idx) + '.nii')
-					saved_segname = os.path.join(savedseg_path, 'segmentation-' + str(idx) + '.nii')
+					saved_ctname = os.path.join(savedct_path,saved_prefix +'-'+str(idx) +'.nii')
+					saved_segname = os.path.join(savedseg_path,saved_prefix.replace('volume','segmentation')+'-'+str(idx)+'.nii')
 					saved_preprocessed(ct_block,origin,direction,xyz_thickness,saved_ctname)
 					saved_preprocessed(seg_block,origin,direction,xyz_thickness,saved_segname)
 					idx = idx + 1
-	return idx
+	return saved_idx + idx
 
 def saved_preprocessed(savedImg,origin,direction,xyz_thickness,saved_name):
 	newImg = sitk.GetImageFromArray(savedImg)
@@ -50,17 +51,16 @@ def saved_preprocessed(savedImg,origin,direction,xyz_thickness,saved_name):
 def preprocess():
 	start_time = time.time()
 	##########hyperparameters1##########
-	file_path = '/media/data/LITS/Training_dataset/'
-	num_file = len(os.listdir(file_path))
-	savedct_path = '/media/data/LITS/Preprocessed16_48/ct/'
-	savedseg_path = '/media/data/LITS/Preprocessed16_48/seg/'
+	file_path = "/data/lihuiyu/LiTS/Training_dataset"
+	savedct_path = "/data/lihuiyu/LiTS/Preprocessed/ct"
+	savedseg_path = "/data/lihuiyu/LiTS/Preprocessed/seg"
+	num_file = 131
 	expand_slice = 10
-	blockz = 16;blockx = 48;blocky = 48
-	stridez = blockz;stridex = blockx; stridey = blocky
-	# stridez = blockz//3;stridex = blockx//3;stridey = blocky//3
+	blockz = 64;blockx = 256;blocky = 256
+	stridez = blockz//2;stridex = blockx//2;stridey = blocky//2
 	xyz_thickness = [1.0, 1.0, 1.0]
 	saved_idx = 0
-	##########end hyperparameters1##########
+	##########end hyperparameters1#######
 	# Clear saved dir
 	if os.path.exists(savedct_path) is True:
 		shutil.rmtree(savedct_path)
@@ -69,7 +69,8 @@ def preprocess():
 		shutil.rmtree(savedseg_path)
 	os.mkdir(savedseg_path)
 
-	for i in range(1):#num_file
+	for i in range(num_file):#num_file
+		saved_prefix = 'volume-'+str(i)
 		ct = sitk.ReadImage(os.path.join(file_path,'volume-'+str(i)+'.nii'), sitk.sitkFloat32)# sitk.sitkInt16 Read one image using SimpleITK
 		origin = ct.GetOrigin()
 		direction = ct.GetDirection()
@@ -86,6 +87,7 @@ def preprocess():
 		ct.GetSpacing()[-1] / xyz_thickness[-1], ct.GetSpacing()[0] / xyz_thickness[0],
 		ct.GetSpacing()[1] / xyz_thickness[1]), order=3)
 		# 对金标准插值不应该使用高级插值方式，这样会破坏边界部分,检查数据输出很重要！！！
+		# 使用order=1可确保zoomed seg unique = [0,1,2]
 		seg_array = ndimage.zoom(seg_array, (
 		ct.GetSpacing()[-1] / xyz_thickness[-1], ct.GetSpacing()[0] / xyz_thickness[0],
 		ct.GetSpacing()[1] / xyz_thickness[1]), order=0)
@@ -93,8 +95,15 @@ def preprocess():
 		print('zoomed shape:', ct_array.shape, ',', seg_array.shape)
 
 		# step2:window transform
-		ct_array = window_transform(ct_array, windowWidth=200, windowCenter=40, normal=True)
-		print('window transform:',ct_array.min(),ct_array.max())
+		print('zoomed seg unique:',np.unique(seg_array))
+		seg_tumor = seg_array == 2
+		ct_tumor = ct_array * seg_tumor
+		tumor_min = ct_tumor.min()
+		tumor_max = ct_tumor.max()
+		tumor_wide = tumor_max - tumor_min
+		tumor_center = (tumor_max + tumor_min) / 2
+		ct_array = window_transform(ct_array, tumor_wide, tumor_center, normal=True)
+		print('window transform(',tumor_wide,',',tumor_center,'):',ct_array.min(),ct_array.max())
 
 		# step3:get mask effective range(startpostion:endpostion)
 		z = np.any(seg_array, axis=(1, 2))  # seg_array.shape(125, 256, 256)
@@ -114,22 +123,18 @@ def preprocess():
 		# step4:generate subimage
 		# step5 save the preprocessed data
 		saved_idx = generate_subimage(ct_array, seg_array, stridez, stridex, stridey, blockz, blockx, blocky,
-						  saved_idx, origin, direction,xyz_thickness,savedct_path,savedseg_path)
+						  saved_idx, origin, direction,xyz_thickness,savedct_path,savedseg_path,saved_prefix)
 
 		print('Time {:.3f} min'.format((time.time() - start_time) / 60))
 		print(saved_idx)
 
-
-def check_empty(savedseg_path):
-	seg_lists = os.listdir(savedseg_path)
-	num_file = len(seg_lists)
-	for i in range(num_file):
-		seg_array = sitk.GetArrayFromImage(sitk.ReadImage(os.path.join(savedseg_path, seg_lists[i])))
-		if not seg_array.any():
-			print(seg_lists[i])
-
 if __name__ == '__main__':
 	start_time = time.time()
+	logfile = './printLog'
+	if os.path.isfile(logfile):
+		os.remove(logfile)
+	sys.stdout = Logger(logfile)#see utils.py
+
 	preprocess()
 	print('Time {:.3f} min'.format((time.time() - start_time) / 60))
 	print(time.strftime('%Y/%m/%d-%H:%M:%S', time.localtime()))

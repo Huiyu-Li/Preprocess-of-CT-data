@@ -49,8 +49,6 @@ Different stride may be employed as data augmentation
 
 get_GrayScaleRange(train_ct_path) # get the gray scale range of train-liver, train_tumor, which can help you to inspect the intensity ralationshape between them.
 
-Decide_preprocess(blockzxy,config)
-
 CheckPreprocessed.py : Check the result of each step carefully(just plot, so easy but significant)
 
 LiTS_Decide_Preprocessing： # Decide Preprocess of different stride, window wide-center

@@ -8,6 +8,19 @@ from utils import *
 import warnings
 warnings.simplefilter("ignore")
 
+def window_transform_truncted(ct_array, windowWidth, windowCenter, normal=False):
+	"""
+	return: trucated image according to window center and window width
+	and normalized to [0,1]
+	"""
+	minWindow = float(windowCenter) - 0.5 * float(windowWidth)
+	maxWindow = float(windowCenter) + 0.5 * float(windowWidth)
+	ct_array[ct_array < minWindow] = minWindow;
+	ct_array[ct_array > maxWindow] = maxWindow
+	if not normal:
+		ct_array = (ct_array * 255).astype('uint8')
+	return ct_array
+
 def window_transform(ct_array, windowWidth, windowCenter, normal=False):
 	"""
     return: trucated image according to window center and window width
